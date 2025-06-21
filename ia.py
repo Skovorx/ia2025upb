@@ -1,109 +1,125 @@
-# prompt: haz todo el deployment anterior con streamlit, permite cargar un csv
+# prompt: haz todo el deployment anterior con streamlit, permite cargar un csv. ten encuenta esto Error loading or applying scaler: The feature names should match those that were passed during fit. Feature names must be in the same order as they were in fit.
+
 
 import streamlit as st
 import pandas as pd
-import pickle
 import numpy as np
-from sklearn.preprocessing import StandardScaler # Need to import if using scaler
+import pickle
+from sklearn.preprocessing import StandardScaler # Ensure StandardScaler is imported
 
-st.title('Cl Prediction App')
+st.title("Airfoil Cl Prediction")
 
-st.write("""
-This app predicts the lift coefficient (Cl) of an airfoil based on geometric and flow parameters.
-""")
+st.write("Upload your CSV file to get predictions for Cl.")
 
-# Upload CSV file
-uploaded_file = st.file_uploader("Upload your input CSV file", type=["csv"])
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
 if uploaded_file is not None:
     try:
-        input_df = pd.read_csv(uploaded_file)
+        df_pred = pd.read_csv(uploaded_file)
 
-        # --- Data Preprocessing (Mirroring the notebook steps) ---
-
-        # 1. Drop irrelevant columns (ensure these columns exist in the input CSV)
-        cols_to_drop_initial = ['z_te', 'dz_te']
-        input_df = input_df.drop(columns=[col for col in cols_to_drop_initial if col in input_df.columns], errors='ignore')
-
-        # 2. Convert 'alpha' to float64 (ensure 'alpha' exists)
-        if 'alpha' in input_df.columns:
-             input_df['alpha'] = input_df['alpha'].astype('float64')
-        else:
-            st.warning("Column 'alpha' not found in the uploaded CSV. Skipping type conversion.")
-
-
-        # 3. Remove rows/profiles with extreme Cl (this step is based on the *original* data analysis)
-        # In a real-world deployment for prediction, you wouldn't remove rows based on the target
-        # variable of the *new* input data. However, since the original notebook removed
-        # entire 'airfoil' profiles based on this condition, and the 'airfoil' column
-        # is dropped later, we'll skip this step for prediction on *new* data.
-        # If 'airfoil' was an input feature used for prediction, this would be more complex.
-        if 'airfoil' in input_df.columns:
-             st.write("Skipping 'airfoil' outlier removal as it's typically not done on new prediction data.")
-             input_df = input_df.drop(['airfoil'], axis=1, errors='ignore') # Drop the column if it exists
-        else:
-             st.write("Column 'airfoil' not found in the uploaded CSV.")
-
-
-        # 4. Scaling (Use the pre-trained scaler)
+        # Load the scaler and model
         try:
             with open('scaler.pkl', 'rb') as f:
-                scaler = pickle.load(f)
-
-            # Identify columns to scale (all except 'Cl' if it exists, or all features)
-            # If the input CSV *might* contain 'Cl' (e.g., for comparison), exclude it.
-            # Otherwise, scale all columns of the input data.
-            columns_to_scale = input_df.columns.tolist()
-            if 'Cl' in columns_to_scale:
-                 columns_to_scale.remove('Cl') # Assuming 'Cl' might be present but is the target
-
-            # Apply the scaling
-            if columns_to_scale: # Check if there are columns left to scale
-                 input_df[columns_to_scale] = scaler.transform(input_df[columns_to_scale])
-            else:
-                 st.warning("No columns left to scale after considering 'Cl'. Check input data.")
-
-        except FileNotFoundError:
-            st.error("Scaler file 'scaler.pkl' not found. Please ensure it's in the same directory.")
-            st.stop()
-        except Exception as e:
-            st.error(f"Error loading or applying scaler: {e}")
-            st.stop()
-
-
-        st.subheader('Processed Input Data')
-        st.write(input_df.head())
-
-        # --- Load the trained model ---
-        try:
+                loaded_scaler = pickle.load(f)
             with open('final_xgb_model.pkl', 'rb') as f:
-                model = pickle.load(f)
+                loaded_model = pickle.load(f)
         except FileNotFoundError:
-            st.error("Model file 'final_xgb_model.pkl' not found. Please ensure it's in the same directory.")
+            st.error("Error: Model or scaler file not found. Please ensure 'scaler.pkl' and 'final_xgb_model.pkl' are in the same directory.")
             st.stop()
         except Exception as e:
-            st.error(f"Error loading the model: {e}")
+            st.error(f"Error loading model or scaler: {e}")
             st.stop()
 
-        # --- Make Predictions ---
+        # --- Data Preprocessing Steps (Matching the Colab notebook) ---
+
+        # Ensure columns exist before dropping
+        cols_to_drop_initial = ['z_te', 'dz_te']
+        cols_to_drop_initial_exist = [col for col in cols_to_drop_initial if col in df_pred.columns]
+        if cols_to_drop_initial_exist:
+            df_pred = df_pred.drop(cols_to_drop_initial_exist, axis=1)
+            st.write(f"Dropped columns: {cols_to_drop_initial_exist}")
+        else:
+            st.write("Initial columns 'z_te', 'dz_te' not found in the uploaded file.")
+
+
+        # Handle 'alpha' column (assuming it exists and needs conversion)
+        if 'alpha' in df_pred.columns:
+             # Attempt conversion, handle errors
+            try:
+                df_pred['alpha'] = df_pred['alpha'].astype('float64')
+            except ValueError:
+                st.error("Error: 'alpha' column could not be converted to numeric type. Please check its format.")
+                st.stop()
+        else:
+             st.warning("Warning: 'alpha' column not found in the uploaded file. This may affect predictions if it's a required feature.")
+
+
+        # Outlier detection and removal based on 'airfoil' (if 'airfoil' exists)
+        if 'airfoil' in df_pred.columns and 'Cl' in df_pred.columns:
+             # This part assumes you want to remove rows based on the same logic
+             # as in the original notebook. You might need to adjust if 'Cl'
+             # isn't present in the prediction data or if the logic changes
+             # for prediction vs training data.
+             # For prediction, we typically don't remove rows based on target value outliers.
+             # Let's skip this step for prediction data to avoid losing rows.
+             st.write("Skipping outlier removal based on 'Cl' for prediction data.")
+
+        # Drop 'airfoil' column if it exists
+        if 'airfoil' in df_pred.columns:
+            df_pred = df_pred.drop(['airfoil'], axis=1)
+            st.write("Dropped 'airfoil' column.")
+        else:
+            st.write("Column 'airfoil' not found in the uploaded file.")
+
+
+        # Outlier detection/handling on 'Cl' (if 'Cl' exists)
+        if 'Cl' in df_pred.columns:
+             st.write("Skipping outlier detection on 'Cl' as it's the target variable for prediction.")
+
+
+        # Scaling the independent variables
+        # Ensure the columns to scale match the columns used during scaler fitting.
+        # The loaded_scaler has `feature_names_in_` attribute which stores the
+        # column names it was fitted on.
         try:
-            prediction = model.predict(input_df)
+            # Get the column names the scaler was fitted on
+            scaled_columns_fitted = loaded_scaler.feature_names_in_
 
-            st.subheader('Prediction')
-            # Display predictions, perhaps alongside the original data if helpful
-            result_df = input_df.copy() # Use the processed input data
-            result_df['Predicted_Cl'] = prediction
-            st.write(result_df[['Predicted_Cl']].head()) # Show only the prediction initially
-            st.write(result_df) # Or show the full processed data + prediction
+            # Check if all columns the scaler was fitted on are present in the uploaded dataframe
+            missing_columns = [col for col in scaled_columns_fitted if col not in df_pred.columns]
 
+            if missing_columns:
+                st.error(f"Error: The uploaded CSV is missing the following columns that the model was trained on: {missing_columns}")
+                st.stop()
+
+            # Ensure the columns are in the same order as the scaler was fitted on
+            df_pred_scaled = df_pred[scaled_columns_fitted]
+
+            # Apply scaling
+            df_pred_scaled[scaled_columns_fitted] = loaded_scaler.transform(df_pred_scaled[scaled_columns_fitted])
+            st.write("Independent variables scaled successfully.")
+
+        except AttributeError:
+            st.error("Error: Could not get feature names from the loaded scaler. Ensure the scaler was fitted with feature names.")
+            st.stop()
+        except KeyError as e:
+             st.error(f"Error accessing column {e}. Ensure your uploaded CSV has the correct column names.")
+             st.stop()
+        except Exception as e:
+            st.error(f"Error during scaling: {e}")
+            st.stop()
+
+
+        # Make predictions
+        try:
+            predictions = loaded_model.predict(df_pred_scaled)
+            df_pred['Predicted_Cl'] = predictions
+
+            st.subheader("Predictions")
+            st.write(df_pred)
 
         except Exception as e:
             st.error(f"Error during prediction: {e}")
-            st.stop()
-
 
     except Exception as e:
-        st.error(f"Error processing the uploaded file: {e}")
-
-else:
-    st.info('Awaiting for CSV file to be uploaded.')
+        st.error(f"An error occurred: {e}")
