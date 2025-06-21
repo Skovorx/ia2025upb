@@ -1,7 +1,4 @@
 # prompt: Carga el modelo y el scaler, con streamlit permite que con una interfaz gráfica permita cargar un .csv sin procesar, luego aplica todo lo que se ha hecho en el collab, aplica el modelo y el scaler y luego predice. Crea una subseccion donde se visualizen los dato cargados, los datos preprocesados, y luego las predicciones, donde al lado de la matriz sin procesar agrega uan columna con la prediccion
-
-!pip install streamlit
-
 import streamlit as st
 import pandas as pd
 import pickle
