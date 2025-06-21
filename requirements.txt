@@ -1,11 +1,8 @@
-dcor
 matplotlib
 numpy
 pandas
 scikit-learn
 scipy
-seaborn
 streamlit
 xgboost
-ydata-profiling
 openpyxl
