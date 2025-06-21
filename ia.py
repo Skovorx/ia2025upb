@@ -1,145 +1,109 @@
+# prompt: haz todo el deployment anterior con streamlit, permite cargar un csv
 
 import streamlit as st
 import pandas as pd
 import pickle
-from sklearn.preprocessing import StandardScaler
-import os
+import numpy as np
+from sklearn.preprocessing import StandardScaler # Need to import if using scaler
 
-# Cargar el modelo y el scaler serializados
-try:
-    with open('final_xgb_model.pkl', 'rb') as f:
-        loaded_model = pickle.load(f)
-    with open('scaler.pkl', 'rb') as f:
-        loaded_scaler = pickle.load(f)
-    st.success("Modelo y Scaler cargados correctamente.")
-except FileNotFoundError:
-    st.error("Error: Asegúrate de que los archivos 'final_xgb_model.pkl' y 'scaler.pkl' existen.")
-    loaded_model = None
-    loaded_scaler = None
+st.title('Cl Prediction App')
 
-st.title("Predicción de Coeficiente de Sustentación (Cl)")
-st.write("Carga un archivo CSV sin procesar, preprocesaremos los datos, aplicaremos el modelo entrenado y mostraremos las predicciones.")
+st.write("""
+This app predicts the lift coefficient (Cl) of an airfoil based on geometric and flow parameters.
+""")
 
-# Sección de carga de archivo
-st.header("1. Cargar archivo CSV")
-uploaded_file = st.file_uploader("Elige un archivo CSV", type="csv")
+# Upload CSV file
+uploaded_file = st.file_uploader("Upload your input CSV file", type=["csv"])
 
-df_raw = None
 if uploaded_file is not None:
     try:
-        df_raw = pd.read_csv(uploaded_file)
-        st.success("Archivo cargado exitosamente.")
-        st.subheader("Datos cargados (sin procesar)")
-        st.dataframe(df_raw)
-    except Exception as e:
-        st.error(f"Error al leer el archivo CSV: {e}")
+        input_df = pd.read_csv(uploaded_file)
 
-# Sección de preprocesamiento y predicción
-if df_raw is not None and loaded_model is not None and loaded_scaler is not None:
-    st.header("2. Procesar datos y predecir")
+        # --- Data Preprocessing (Mirroring the notebook steps) ---
 
-    # Aplicar preprocesamiento
-    try:
-        df_processed = df_raw.copy()
+        # 1. Drop irrelevant columns (ensure these columns exist in the input CSV)
+        cols_to_drop_initial = ['z_te', 'dz_te']
+        input_df = input_df.drop(columns=[col for col in cols_to_drop_initial if col in input_df.columns], errors='ignore')
 
-        # Eliminar columnas irrelevantes (si existen)
-        cols_to_drop = ['z_te', 'dz_te', 'airfoil']
-        for col in cols_to_drop:
-            if col in df_processed.columns:
-                df_processed = df_processed.drop(col, axis=1)
-
-        # Convertir 'alpha' a float si existe
-        if 'alpha' in df_processed.columns:
-             df_processed['alpha'] = df_processed['alpha'].astype('float64')
-
-        # Asumimos que el scaler fue entrenado con todas las columnas excepto 'Cl'.
-        # Identificamos las columnas del df_processed (sin Cl, si estuviera)
-        # que se usaron para entrenar el scaler.
-        # Las columnas escaladas en el notebook original fueron:
-        # 'r_le', 'x_up_pt', 'z_up_pt', 'x_lo_pt', 'z_lo_pt', 'zxx_lo_pt', 'alpha_te', 'beta_te', 'alpha'
-
-        # Asegurarnos de que las columnas a escalar existan en el df_processed
-        # y que tengan el mismo orden que las columnas usadas para entrenar el scaler.
-        # Una forma robusta es obtener las columnas del scaler si fuera posible,
-        # pero como no guardamos el order, lo definimos explicitamente basado en el notebook.
-        original_scaled_cols = [
-    'r_le', 'x_up_pt', 'z_up_pt', 'x_lo_pt', 'z_lo_pt', 
-    'zxx_lo_pt', 'zxx_up_pt',  
-    'alpha_te', 'beta_te', 'alpha']
-        cols_for_scaling_in_input = [col for col in original_scaled_cols if col in df_processed.columns]
-
-        # Verificar si las columnas necesarias para el scaler están presentes
-        if len(cols_for_scaling_in_input) != len(original_scaled_cols):
-             missing_cols = set(original_scaled_cols) - set(cols_for_scaling_in_input)
-             st.warning(f"Advertencia: Faltan algunas columnas esperadas para el escalado en el archivo cargado: {missing_cols}. El escalado se aplicará a las columnas presentes.")
-
-        # Aplicar escalado
-        if cols_for_scaling_in_input:
-            # Asegurarnos de que el orden de las columnas para escalar sea el mismo que el scaler espera
-            # Nota: StandardScaler no guarda el nombre de las columnas.
-            # Necesitamos confiar en que el orden de las columnas en el df_processed para escalar
-            # sea el mismo que el orden de las columnas que se usaron para entrenar el scaler.
-            # Si el df_processed tiene columnas extra o en diferente orden (excepto Cl),
-            # el escalado podría ser incorrecto. Asumimos que el input tiene las columnas
-            # necesarias (menos las eliminadas) y las ordena para el scaler.
-            # Un enfoque más robusto guardaría los nombres de las columnas junto con el scaler.
-
-            # Crear un dataframe solo con las columnas a escalar para el scaler
-            df_to_scale = df_processed[cols_for_scaling_in_input]
-
-            # Aplicar transform
-            df_processed[cols_for_scaling_in_input] = loaded_scaler.transform(df_to_scale)
-
-        st.subheader("Datos preprocesados (escalados y columnas eliminadas)")
-        st.dataframe(df_processed)
-
-        # Asegurarse de que las columnas del dataframe preprocesado coincidan con las columnas de entrenamiento
-        # Es crucial que las columnas del dataframe de entrada coincidan exactamente con las que el modelo espera.
-        # El modelo XGBoost fue entrenado con X = df.drop(columns="Cl"). Necesitamos obtener esas columnas exactas.
-        # Como no guardamos explicitamente la lista de X.columns en el notebook,
-        # la reconstruimos basándonos en el código original de preprocesamiento.
-
-        # Columnas originales después de eliminar 'z_te', 'dz_te', 'airfoil' y antes de escalar
-        # Esto asume que el archivo de entrada original ('combined.csv') tenía todas estas columnas
-        # y que solo se eliminaron esas 3.
-        original_training_cols_before_scaling = [col for col in df_raw.columns if col not in ['z_te', 'dz_te', 'airfoil', 'Cl']]
-
-        # Columnas que el modelo final espera DEBEN estar en el mismo orden que X_final.columns
-        # en el notebook. X_final era df.drop(columns="Cl") DESPUÉS de todo el preprocesamiento (eliminación y escalado).
-        # Las columnas escaladas fueron ['r_le', 'x_up_pt', 'z_up_pt', 'x_lo_pt', 'z_lo_pt', 'zxx_lo_pt', 'alpha_te', 'beta_te', 'alpha']
-        # Las no escaladas (y no eliminadas) serían las demás. En el código original, solo 'Cl' se excluía de la lista de escalado.
-        # Esto implica que TODAS las columnas restantes (después de eliminar irrelevantes) fueron escaladas.
-        # Verificamos las columnas del df_processed después de la eliminación.
-        expected_model_cols = list(df_processed.columns) # Esto asume que df_processed ya tiene solo las columnas correctas y escaladas.
-
-        # Asegurarse de que el dataframe de entrada para la predicción tenga las columnas en el orden correcto
-        # XGBoost espera que las características de entrada estén en el mismo orden que durante el entrenamiento.
-        # La forma más segura es reordenar las columnas del df_processed según el orden de X_final.columns.
-        # Como X_final.columns no fue guardado, usamos las columnas de df_processed asumiendo que el preprocesamiento
-        # en Streamlit replicó el orden final del notebook.
-
-        X_predict = df_processed[expected_model_cols] # Usamos las columnas en el orden de df_processed
-
-
-        # Realizar predicciones
-        predictions = loaded_model.predict(X_predict)
-
-        st.subheader("Predicciones")
-        # Convertir predicciones a DataFrame para mejor visualización
-        df_predictions = pd.DataFrame(predictions, columns=['Cl_Predicho'])
-        st.dataframe(df_predictions)
-
-        # Mostrar tabla original con predicciones añadidas
-        df_raw_with_predictions = df_raw.copy()
-        # Asegurarse de que el número de filas coincide
-        if len(df_raw_with_predictions) == len(df_predictions):
-            df_raw_with_predictions['Cl_Predicho'] = df_predictions['Cl_Predicho']
-            st.subheader("Datos originales con Predicciones")
-            st.dataframe(df_raw_with_predictions)
+        # 2. Convert 'alpha' to float64 (ensure 'alpha' exists)
+        if 'alpha' in input_df.columns:
+             input_df['alpha'] = input_df['alpha'].astype('float64')
         else:
-            st.warning("El número de filas en el archivo cargado no coincide con el número de predicciones.")
+            st.warning("Column 'alpha' not found in the uploaded CSV. Skipping type conversion.")
+
+
+        # 3. Remove rows/profiles with extreme Cl (this step is based on the *original* data analysis)
+        # In a real-world deployment for prediction, you wouldn't remove rows based on the target
+        # variable of the *new* input data. However, since the original notebook removed
+        # entire 'airfoil' profiles based on this condition, and the 'airfoil' column
+        # is dropped later, we'll skip this step for prediction on *new* data.
+        # If 'airfoil' was an input feature used for prediction, this would be more complex.
+        if 'airfoil' in input_df.columns:
+             st.write("Skipping 'airfoil' outlier removal as it's typically not done on new prediction data.")
+             input_df = input_df.drop(['airfoil'], axis=1, errors='ignore') # Drop the column if it exists
+        else:
+             st.write("Column 'airfoil' not found in the uploaded CSV.")
+
+
+        # 4. Scaling (Use the pre-trained scaler)
+        try:
+            with open('scaler.pkl', 'rb') as f:
+                scaler = pickle.load(f)
+
+            # Identify columns to scale (all except 'Cl' if it exists, or all features)
+            # If the input CSV *might* contain 'Cl' (e.g., for comparison), exclude it.
+            # Otherwise, scale all columns of the input data.
+            columns_to_scale = input_df.columns.tolist()
+            if 'Cl' in columns_to_scale:
+                 columns_to_scale.remove('Cl') # Assuming 'Cl' might be present but is the target
+
+            # Apply the scaling
+            if columns_to_scale: # Check if there are columns left to scale
+                 input_df[columns_to_scale] = scaler.transform(input_df[columns_to_scale])
+            else:
+                 st.warning("No columns left to scale after considering 'Cl'. Check input data.")
+
+        except FileNotFoundError:
+            st.error("Scaler file 'scaler.pkl' not found. Please ensure it's in the same directory.")
+            st.stop()
+        except Exception as e:
+            st.error(f"Error loading or applying scaler: {e}")
+            st.stop()
+
+
+        st.subheader('Processed Input Data')
+        st.write(input_df.head())
+
+        # --- Load the trained model ---
+        try:
+            with open('final_xgb_model.pkl', 'rb') as f:
+                model = pickle.load(f)
+        except FileNotFoundError:
+            st.error("Model file 'final_xgb_model.pkl' not found. Please ensure it's in the same directory.")
+            st.stop()
+        except Exception as e:
+            st.error(f"Error loading the model: {e}")
+            st.stop()
+
+        # --- Make Predictions ---
+        try:
+            prediction = model.predict(input_df)
+
+            st.subheader('Prediction')
+            # Display predictions, perhaps alongside the original data if helpful
+            result_df = input_df.copy() # Use the processed input data
+            result_df['Predicted_Cl'] = prediction
+            st.write(result_df[['Predicted_Cl']].head()) # Show only the prediction initially
+            st.write(result_df) # Or show the full processed data + prediction
+
+
+        except Exception as e:
+            st.error(f"Error during prediction: {e}")
+            st.stop()
 
 
     except Exception as e:
-        st.error(f"Error durante el preprocesamiento o la predicción: {e}")
+        st.error(f"Error processing the uploaded file: {e}")
 
+else:
+    st.info('Awaiting for CSV file to be uploaded.')
