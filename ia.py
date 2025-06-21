@@ -1,4 +1,4 @@
-# prompt: Carga el modelo y el scaler, con streamlit permite que con una interfaz gráfica permita cargar un .csv sin procesar, luego aplica todo lo que se ha hecho en el collab, aplica el modelo y el scaler y luego predice. Crea una subseccion donde se visualizen los dato cargados, los datos preprocesados, y luego las predicciones, donde al lado de la matriz sin procesar agrega uan columna con la prediccion
+
 import streamlit as st
 import pandas as pd
 import pickle
@@ -62,7 +62,10 @@ if df_raw is not None and loaded_model is not None and loaded_scaler is not None
         # y que tengan el mismo orden que las columnas usadas para entrenar el scaler.
         # Una forma robusta es obtener las columnas del scaler si fuera posible,
         # pero como no guardamos el order, lo definimos explicitamente basado en el notebook.
-        original_scaled_cols = ['r_le', 'x_up_pt', 'z_up_pt', 'x_lo_pt', 'z_lo_pt', 'zxx_lo_pt', 'alpha_te', 'beta_te', 'alpha']
+        original_scaled_cols = [
+    'r_le', 'x_up_pt', 'z_up_pt', 'x_lo_pt', 'z_lo_pt', 
+    'zxx_lo_pt', 'zxx_up_pt',  
+    'alpha_te', 'beta_te', 'alpha']
         cols_for_scaling_in_input = [col for col in original_scaled_cols if col in df_processed.columns]
 
         # Verificar si las columnas necesarias para el scaler están presentes
