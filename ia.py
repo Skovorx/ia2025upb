@@ -1,6 +1,5 @@
 # prompt: haz todo el deployment anterior con streamlit cargando el modelo y el scaler, permite cargar un csv. ten encuenta esto Error loading or applying scaler: The feature names should match those that were passed during fit. Feature names must be in the same order as they were in fit. los features esperados son airfoil,r_le,x_up_pt,z_up_pt,zxx_up_pt,x_lo_pt,z_lo_pt,zxx_lo_pt,z_te,dz_te,alpha_te,beta_te,alpha,Cl PIDE TODAS ESAS QUE TE ESTOY PIDIENDO
 
-!pip install streamlit pandas scikit-learn xgboost
 
 import streamlit as st
 import pandas as pd
